@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My PlayHTML Game</title>
+</head>
+
+<body>
+
+    <h1>My PlayHTML Game</h1>
+
+    <button id="my-lamp" can-toggle>
+        Lamp
+    </button>
+
+    <script type="module">
+        import { playhtml } from "https://unpkg.com/playhtml";
+
+        playhtml.init({
+            room: "my-game-room"
+        });
+    </script>
+
+</body>
+</html>
