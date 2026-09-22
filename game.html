@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>OTTv2 - Game</title>
+
+    <link rel="stylesheet"
+          href="./css/game.css">
+
+</head>
+
+
+<body>
+
+    <main class="game-app">
+
+
+        <!-- TOP BAR -->
+
+        <header class="topbar">
+
+            <div>
+
+                <div class="brand">
+                    OTTv2
+                </div>
+
+                <div
+                    id="room-label"
+                    class="room-label">
+                </div>
+
+            </div>
+
+
+            <div class="top-actions">
+
+                <button
+                    id="copy-link"
+                    class="small-btn">
+
+                    Copy link
+
+                </button>
+
+
+                <button
+                    id="back-lobby"
+                    class="small-btn">
+
+                    Lobby
+
+                </button>
+
+            </div>
+
+        </header>
+
+
+
+        <!-- GAME -->
+
+        <section class="game-layout">
+
+
+            <!-- SIDE PANEL -->
+
+            <aside class="side-panel">
+
+
+                <!-- PLAYER 1 -->
+
+                <div class="player-card player-one">
+
+                    <span class="player-dot"></span>
+
+                    <div>
+
+                        <strong>
+                            Player 1
+                        </strong>
+
+                        <div id="p1-state">
+                            Đang chờ...
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+
+                <!-- TURN -->
+
+                <div class="turn-box">
+
+                    <span>
+                        Lượt hiện tại
+                    </span>
+
+                    <strong id="turn-label">
+                        Đang tải...
+                    </strong>
+
+                </div>
+
+
+
+                <!-- STATUS -->
+
+                <div class="status-box">
+
+                    <span>
+                        Trạng thái
+                    </span>
+
+                    <strong id="status-label">
+                        Đang kết nối...
+                    </strong>
+
+                </div>
+
+
+
+                <!-- PLAYER 2 -->
+
+                <div class="player-card player-two">
+
+                    <span class="player-dot"></span>
+
+                    <div>
+
+                        <strong>
+                            Player 2
+                        </strong>
+
+                        <div id="p2-state">
+                            Đang chờ...
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+
+                <!-- COUNTER -->
+
+                <div class="counts">
+
+                    <h3>
+                        Quân còn lại
+                    </h3>
+
+                    <div id="counts-content">
+                    </div>
+
+                </div>
+
+
+
+                <!-- HELP -->
+
+                <div class="help">
+
+                    <strong>
+                        Cách chơi
+                    </strong>
+
+                    <p>
+                        Chọn quân của bạn,
+                        sau đó chọn một ô kề
+                        theo 8 hướng.
+                    </p>
+
+                    <p>
+                        Quân cùng loại sẽ chặn nhau.
+                        Quân khác loại chỉ ăn được
+                        nếu thắng theo luật Đấm-Kéo-Lá.
+                    </p>
+
+                </div>
+
+            </aside>
+
+
+
+            <!-- BOARD -->
+
+            <section class="board-panel">
+
+
+                <div
+                    id="win-banner"
+                    class="win-banner hidden">
+                </div>
+
+
+                <div
+                    id="board"
+                    class="board">
+                </div>
+
+
+                <div
+                    id="coordinates-x"
+                    class="coordinates-x">
+                </div>
+
+            </section>
+
+        </section>
+
+    </main>
+
+
+
+    <script
+        type="module"
+        src="./js/game.js">
+    </script>
+
+</body>
+
+</html>
+

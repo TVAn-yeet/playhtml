@@ -1,24 +1,130 @@
+```html
 <!DOCTYPE html>
-<html>
+<html lang="vi">
+
 <head>
-    <title>My PlayHTML Game</title>
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>OTTv2 - Lobby</title>
+
+    <link rel="stylesheet" href="./css/lobby.css">
 </head>
 
 <body>
 
-    <h1>My PlayHTML Game</h1>
+    <main class="lobby">
 
-    <button id="my-lamp" can-toggle>
-        Lamp
-    </button>
+        <section class="hero">
 
-    <script type="module">
-        import { playhtml } from "https://unpkg.com/playhtml";
+            <p class="eyebrow">
+                MULTIPLAYER GAME
+            </p>
 
-        playhtml.init({
-            room: "my-game-room"
-        });
+            <h1>OTTv2</h1>
+
+            <p>
+                Oẳn Tù Tì chiến thuật trên bàn cờ 9×9.
+            </p>
+
+        </section>
+
+
+        <section class="panel">
+
+            <h2>Tạo ván mới</h2>
+
+            <p>
+                Mỗi ván có một Room ID riêng.
+                Hai người chơi cùng Room sẽ chơi cùng một ván.
+            </p>
+
+            <div class="actions">
+
+                <button
+                    id="create-game"
+                    class="primary">
+                    ＋ Tạo ván
+                </button>
+
+                <button
+                    id="join-game"
+                    class="secondary">
+                    Tham gia bằng mã
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <section class="panel">
+
+            <h2>Luật chơi</h2>
+
+            <ul>
+
+                <li>
+                    Bàn cờ 9×9.
+                </li>
+
+                <li>
+                    Mỗi quân đi đúng 1 ô theo 8 hướng.
+                </li>
+
+                <li>
+                    Đấm ăn Kéo.
+                </li>
+
+                <li>
+                    Kéo ăn Lá.
+                </li>
+
+                <li>
+                    Lá ăn Đấm.
+                </li>
+
+                <li>
+                    Hai quân cùng loại không ăn nhau.
+                </li>
+
+                <li>
+                    Ăn hết toàn bộ quân của đối phương là thắng.
+                </li>
+
+                <li>
+                    Đưa quân vào a1 hoặc i9 cũng thắng.
+                </li>
+
+            </ul>
+
+        </section>
+
+
+        <section class="panel">
+
+            <h2>
+                Các ván trên thiết bị này
+            </h2>
+
+            <div id="recent-rooms"
+                 class="rooms">
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <script
+        type="module"
+        src="./js/lobby.js">
     </script>
 
 </body>
+
 </html>
+```
