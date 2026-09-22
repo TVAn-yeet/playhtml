@@ -1,4 +1,6 @@
-import { playhtml } from "https://unpkg.com/playhtml";
+import {
+    playhtml
+} from "https://unpkg.com/playhtml";
 
 import {
     SIZE,
@@ -6,111 +8,128 @@ import {
     TYPE_ICON,
     createInitialBoard,
     indexOf,
-    isGoal,
     validateMove,
     applyMove
 } from "./rules.js";
 
 
-// ============================================================
-// ROOM
-// ============================================================
+/*
+ * ROOM
+ */
 
 const params =
-    new URLSearchParams(window.location.search);
+    new URLSearchParams(
+        location.search
+    );
 
 const roomId =
     params.get("room");
 
 
 if (!roomId) {
+    alert(
+        "Không tìm thấy Room ID."
+    );
 
-    document.body.innerHTML = `
-        <main style="
-            padding: 40px;
-            font-family: sans-serif;
-        ">
-            <h2>Không tìm thấy Room ID</h2>
-
-            <p>
-                Hãy quay lại Lobby và tạo hoặc tham gia một room.
-            </p>
-        </main>
-    `;
-
-    throw new Error("Missing Room ID");
-
+    location.href =
+        "./index.html";
 }
 
 
-// ============================================================
-// DOM
-// ============================================================
+/*
+ * DOM
+ */
 
 const roomLabel =
-    document.getElementById("room-label");
+    document.getElementById(
+        "room-label"
+    );
 
-const boardElement =
-    document.getElementById("board");
-
-const player1State =
-    document.getElementById("p1-state");
-
-const player2State =
-    document.getElementById("p2-state");
-
-const turnLabel =
-    document.getElementById("turn-label");
-
-const statusLabel =
-    document.getElementById("status-label");
-
-const countsContent =
-    document.getElementById("counts-content");
-
-const winBanner =
-    document.getElementById("win-banner");
-
-const coordinatesX =
-    document.getElementById("coordinates-x");
-
-const copyButton =
-    document.getElementById("copy-link");
+const copyLinkButton =
+    document.getElementById(
+        "copy-link"
+    );
 
 const backLobbyButton =
-    document.getElementById("back-lobby");
+    document.getElementById(
+        "back-lobby"
+    );
+
+const p1State =
+    document.getElementById(
+        "p1-state"
+    );
+
+const p2State =
+    document.getElementById(
+        "p2-state"
+    );
+
+const turnLabel =
+    document.getElementById(
+        "turn-label"
+    );
+
+const statusLabel =
+    document.getElementById(
+        "status-label"
+    );
+
+const countsContent =
+    document.getElementById(
+        "counts-content"
+    );
+
+const boardElement =
+    document.getElementById(
+        "board"
+    );
+
+const coordinatesX =
+    document.getElementById(
+        "coordinates-x"
+    );
+
+const winBanner =
+    document.getElementById(
+        "win-banner"
+    );
 
 
-// ============================================================
-// ROOM LABEL
-// ============================================================
+/*
+ * ROOM LABEL
+ */
 
-if (roomLabel) {
-
-    roomLabel.textContent =
-        `Room ${roomId}`;
-
-}
+roomLabel.textContent =
+    `Room ${roomId}`;
 
 
-// ============================================================
-// INITIAL GAME STATE
-// ============================================================
+/*
+ * LOCAL STATE
+ */
 
-const initialState = {
+let currentState = null;
 
-    version: 1,
+let myPlayer = null;
 
-    roomId,
+let selectedSquare = null;
 
-    players: {
+let gameHandle = null;
 
-        1: null,
 
-        2: null
+/*
+ * PRESENCE CHANNEL
+ */
 
-    },
+const PRESENCE_CHANNEL =
+    "ottv2-player";
 
+
+/*
+ * DEFAULT GAME STATE
+ */
+
+const defaultState = {
     board:
         createInitialBoard(),
 
@@ -121,319 +140,623 @@ const initialState = {
     winReason: null,
 
     moveNumber: 0
-
 };
 
 
-// ============================================================
-// LOCAL VARIABLES
-// ============================================================
+/*
+ * CREATE HIDDEN SHARED STATE ELEMENT
+ *
+ * game.html doesn't need to contain
+ * this element manually.
+ */
 
-let gameHandle = null;
-
-let currentState = null;
-
-let myPlayer = 0;
-
-let selectedCell = null;
-
-
-// ============================================================
-// REGISTER GAME STATE
-// ============================================================
-
-gameHandle =
-    await playhtml.register(
-        "game-state",
-        {
-
-            defaultData:
-                initialState,
-
-            updateElement:
-                ({ data }) => {
-
-                    currentState =
-                        data;
-
-                    render(data);
-
-                }
-
-        }
+let stateElement =
+    document.getElementById(
+        "game-state"
     );
 
 
-// ============================================================
-// INITIALIZE PLAYHTML
-// ============================================================
+if (!stateElement) {
+    stateElement =
+        document.createElement(
+            "div"
+        );
 
-await playhtml.init({
+    stateElement.id =
+        "game-state";
 
+    stateElement.style.display =
+        "none";
+
+    document.body.appendChild(
+        stateElement
+    );
+}
+
+
+/*
+ * PLAYHTML CUSTOM ELEMENT
+ */
+
+playhtml.register(
+    "game-state",
+    {
+        defaultData:
+            defaultState,
+
+        updateElement(
+            element,
+            data
+        ) {
+            currentState =
+                data;
+
+            render(data);
+        }
+    }
+);
+
+
+/*
+ * INITIALIZE PLAYHTML
+ */
+
+playhtml.init({
     room:
         `ottv2-game-${roomId}`
-
 });
 
 
-// Wait for PlayHTML connection
-await playhtml.ready;
+/*
+ * MAIN STARTUP
+ */
 
+async function start() {
 
-// ============================================================
-// PRESENCE
-// ============================================================
-//
-// Player assignment:
-//
-// First unique identity  -> Player 1
-// Second unique identity -> Player 2
-// Others                 -> Spectator
-//
-// We use publicKey instead of shared-state writes.
-// This prevents two players from racing to claim Player 1.
-//
+    /*
+     * Wait until PlayHTML is ready.
+     */
 
-function getRoomPlayerIds() {
+    await playhtml.ready;
 
-    const ids =
-        new Set();
 
+    /*
+     * Get the shared state handle.
+     */
 
-    const presences =
-        playhtml.presence.getPresences();
-
-
-    for (
-        const presence
-        of presences.values()
-    ) {
-
-        const id =
-            presence
-                .playerIdentity
-                ?.publicKey;
-
-
-        if (id) {
-
-            ids.add(id);
-
-        }
-
-    }
-
-
-    return Array
-        .from(ids)
-        .sort();
-
-}
-
-
-// ============================================================
-// GET PLAYER COUNT
-// ============================================================
-
-function getPlayerCount() {
-
-    return getRoomPlayerIds().length;
-
-}
-
-
-// ============================================================
-// UPDATE MY PLAYER
-// ============================================================
-
-function updatePlayerAssignment() {
-
-    const playerIds =
-        getRoomPlayerIds();
-
-
-    const myIdentity =
-        playhtml.presence.getMyIdentity();
-
-
-    const myId =
-        myIdentity?.publicKey;
-
-
-    if (!myId) {
-
-        myPlayer = 0;
-
-        render(currentState);
-
-        return;
-
-    }
-
-
-    const index =
-        playerIds.indexOf(myId);
-
-
-    if (index === 0) {
-
-        myPlayer = 1;
-
-    }
-
-    else if (index === 1) {
-
-        myPlayer = 2;
-
-    }
-
-    else {
-
-        myPlayer = 0;
-
-    }
-
-
-    render(currentState);
-
-}
-
-
-// ============================================================
-// ANNOUNCE MY PRESENCE
-// ============================================================
-
-try {
-
-    await playhtml.presence.setMyPresence(
-        "ottv2-players",
-        {}
-    );
-
-}
-
-catch (error) {
-
-    console.warn(
-        "[OTTv2] Could not set presence:",
-        error
-    );
-
-}
-
-
-// ============================================================
-// PRESENCE CHANGE LISTENER
-// ============================================================
-
-try {
-
-    playhtml.presence.onPresenceChange(
-        "ottv2-players",
-        () => {
-
-            updatePlayerAssignment();
-
-        }
-    );
-
-}
-
-catch (error) {
-
-    console.warn(
-        "[OTTv2] Could not listen for presence changes:",
-        error
-    );
-
-}
-
-
-// ============================================================
-// INITIAL PLAYER ASSIGNMENT
-// ============================================================
-
-updatePlayerAssignment();
-
-
-// ============================================================
-// PIECE HELPERS
-// ============================================================
-
-function getPiece(
-    board,
-    x,
-    y
-) {
-
-    return board[
-        indexOf(x, y)
-    ];
-
-}
-
-
-// ============================================================
-// PIECE NAME
-// ============================================================
-
-function getPieceLabel(type) {
-
-    return (
-        TYPE_LABEL[type] ||
-        type
-    );
-
-}
-
-
-// ============================================================
-// PIECE ICON
-// ============================================================
-
-function getPieceIcon(type) {
-
-    return (
-        TYPE_ICON[type] ||
-        ""
-    );
-
-}
-
-
-// ============================================================
-// COORDINATE
-// ============================================================
-
-function getCoordinate(x, y) {
-
-    const letter =
-        String.fromCharCode(
-            97 + x
+    gameHandle =
+        playhtml.getHandle(
+            "game-state"
         );
 
 
-    const number =
-        y + 1;
+    /*
+     * Announce this browser
+     * in Presence.
+     */
+
+    playhtml.presence.setMyPresence(
+        PRESENCE_CHANNEL,
+        {
+            joined: true
+        }
+    );
 
 
-    return `${letter}${number}`;
+    /*
+     * Render players immediately.
+     */
 
+    updatePlayers();
+
+
+    /*
+     * Listen for player join/leave.
+     */
+
+    playhtml.presence.onPresenceChange(
+        PRESENCE_CHANNEL,
+        () => {
+            updatePlayers();
+        }
+    );
+
+
+    /*
+     * Render initial coordinates.
+     */
+
+    renderCoordinates();
+
+
+    /*
+     * Buttons.
+     */
+
+    copyLinkButton
+        .addEventListener(
+            "click",
+            copyRoomLink
+        );
+
+    backLobbyButton
+        .addEventListener(
+            "click",
+            () => {
+                location.href =
+                    "./index.html";
+            }
+        );
+
+
+    /*
+     * Board click.
+     */
+
+    boardElement
+        .addEventListener(
+            "click",
+            handleBoardClick
+        );
+
+
+    /*
+     * If PlayHTML already has state,
+     * render it.
+     */
+
+    const existing =
+        gameHandle.getData?.();
+
+    if (existing) {
+        currentState =
+            existing;
+
+        render(existing);
+    }
 }
 
 
-// ============================================================
-// RENDER BOARD
-// ============================================================
+start();
 
-function renderBoard(state) {
 
-    if (!boardElement) {
+/*
+ * GET ROOM PLAYERS
+ */
 
-        return;
+function getRoomPlayers() {
 
+    const presences =
+        playhtml.presence
+            .getPresences();
+
+    return [
+        ...presences.entries()
+    ]
+        .sort(
+            ([idA], [idB]) =>
+                idA.localeCompare(idB)
+        );
+}
+
+
+/*
+ * GET MY PLAYER NUMBER
+ *
+ * First presence = Player 1
+ * Second presence = Player 2
+ * More = spectator
+ */
+
+function getMyPlayerNumber() {
+
+    const players =
+        getRoomPlayers();
+
+    const myIndex =
+        players.findIndex(
+            ([id, presence]) =>
+                presence.isMe
+        );
+
+    if (myIndex === 0) {
+        return 1;
     }
 
+    if (myIndex === 1) {
+        return 2;
+    }
+
+    return null;
+}
+
+
+/*
+ * UPDATE PLAYER STATUS
+ */
+
+function updatePlayers() {
+
+    const players =
+        getRoomPlayers();
+
+
+    /*
+     * Current player number.
+     */
+
+    myPlayer =
+        getMyPlayerNumber();
+
+
+    /*
+     * Player 1.
+     */
+
+    if (players.length >= 1) {
+
+        const player1 =
+            players[0][1];
+
+        if (player1.isMe) {
+            p1State.textContent =
+                "Bạn";
+        }
+        else {
+            p1State.textContent =
+                "Đã tham gia";
+        }
+    }
+    else {
+        p1State.textContent =
+            "Đang chờ...";
+    }
+
+
+    /*
+     * Player 2.
+     */
+
+    if (players.length >= 2) {
+
+        const player2 =
+            players[1][1];
+
+        if (player2.isMe) {
+            p2State.textContent =
+                "Bạn";
+        }
+        else {
+            p2State.textContent =
+                "Đã tham gia";
+        }
+    }
+    else {
+        p2State.textContent =
+            "Đang chờ...";
+    }
+
+
+    /*
+     * Spectator.
+     */
+
+    if (players.length > 2) {
+        statusLabel.textContent =
+            "Bạn đang xem";
+    }
+    else if (myPlayer) {
+        statusLabel.textContent =
+            "Đã kết nối";
+    }
+    else {
+        statusLabel.textContent =
+            "Đang chờ...";
+    }
+
+
+    /*
+     * Re-render current state.
+     */
+
+    if (currentState) {
+        render(currentState);
+    }
+}
+
+
+/*
+ * BOARD CLICK
+ */
+
+function handleBoardClick(event) {
+
+    const cell =
+        event.target.closest(
+            ".cell"
+        );
+
+    if (!cell) {
+        return;
+    }
+
+
+    if (!currentState) {
+        return;
+    }
+
+
+    /*
+     * Spectator cannot move.
+     */
+
+    if (!myPlayer) {
+
+        statusLabel.textContent =
+            "Bạn đang xem";
+
+        return;
+    }
+
+
+    /*
+     * Game finished.
+     */
+
+    if (currentState.winner) {
+        return;
+    }
+
+
+    /*
+     * Not player's turn.
+     */
+
+    if (
+        currentState.turn !==
+        myPlayer
+    ) {
+
+        statusLabel.textContent =
+            "Chưa đến lượt bạn.";
+
+        return;
+    }
+
+
+    const x =
+        Number(
+            cell.dataset.x
+        );
+
+    const y =
+        Number(
+            cell.dataset.y
+        );
+
+
+    /*
+     * Nothing selected yet.
+     */
+
+    if (!selectedSquare) {
+
+        const piece =
+            currentState.board[
+                indexOf(x, y)
+            ];
+
+        if (
+            !piece ||
+            piece.player !== myPlayer
+        ) {
+
+            statusLabel.textContent =
+                "Hãy chọn quân của bạn.";
+
+            return;
+        }
+
+
+        selectedSquare = {
+            x,
+            y
+        };
+
+
+        statusLabel.textContent =
+            "Chọn ô muốn đi.";
+
+
+        render(
+            currentState
+        );
+
+        return;
+    }
+
+
+    /*
+     * Clicking selected piece again
+     * cancels selection.
+     */
+
+    if (
+        selectedSquare.x === x &&
+        selectedSquare.y === y
+    ) {
+
+        selectedSquare = null;
+
+        statusLabel.textContent =
+            "Đã bỏ chọn.";
+
+        render(
+            currentState
+        );
+
+        return;
+    }
+
+
+    /*
+     * Try move.
+     */
+
+    makeMove(
+        selectedSquare,
+        {
+            x,
+            y
+        }
+    );
+}
+
+
+/*
+ * MAKE MOVE
+ */
+
+function makeMove(
+    from,
+    to
+) {
+
+    if (!gameHandle) {
+        return;
+    }
+
+
+    /*
+     * Local validation first.
+     */
+
+    const check =
+        validateMove(
+            currentState,
+            myPlayer,
+            from,
+            to
+        );
+
+
+    if (!check.ok) {
+
+        statusLabel.textContent =
+            check.reason;
+
+        return;
+    }
+
+
+    /*
+     * Clear selection.
+     */
+
+    selectedSquare = null;
+
+
+    /*
+     * Update shared state atomically.
+     */
+
+    gameHandle.setData(
+        state => {
+
+            const result =
+                applyMove(
+                    state,
+                    myPlayer,
+                    from,
+                    to
+                );
+
+            if (!result.result.ok) {
+                return state;
+            }
+
+            return result.state;
+        }
+    );
+
+
+    statusLabel.textContent =
+        "Đang cập nhật...";
+}
+
+
+/*
+ * RENDER EVERYTHING
+ */
+
+function render(state) {
+
+    if (!state) {
+        return;
+    }
+
+
+    renderBoard(
+        state
+    );
+
+    renderTurn(
+        state
+    );
+
+    renderCounts(
+        state
+    );
+
+    renderWin(
+        state
+    );
+
+
+    /*
+     * Don't overwrite useful
+     * error messages immediately
+     * while a piece is selected.
+     */
+
+    if (!selectedSquare) {
+
+        if (state.winner) {
+
+            statusLabel.textContent =
+                state.winReason ||
+                "Ván đã kết thúc.";
+        }
+
+        else if (!myPlayer) {
+
+            statusLabel.textContent =
+                "Bạn đang xem.";
+        }
+
+        else if (
+            state.turn ===
+            myPlayer
+        ) {
+
+            statusLabel.textContent =
+                "Đến lượt bạn.";
+        }
+
+        else {
+
+            statusLabel.textContent =
+                "Đang chờ đối thủ.";
+        }
+    }
+}
+
+
+/*
+ * RENDER BOARD
+ */
+
+function renderBoard(state) {
 
     boardElement.innerHTML = "";
 
@@ -451,20 +774,15 @@ function renderBoard(state) {
         ) {
 
             const cell =
-                document.createElement("button");
-
+                document.createElement(
+                    "button"
+                );
 
             cell.type =
                 "button";
 
-
             cell.className =
                 "cell";
-
-
-            // ------------------------------------------------
-            // Coordinates
-            // ------------------------------------------------
 
             cell.dataset.x =
                 x;
@@ -472,76 +790,62 @@ function renderBoard(state) {
             cell.dataset.y =
                 y;
 
-            cell.dataset.coordinate =
-                getCoordinate(x, y);
+
+            /*
+             * Coordinates.
+             */
+
+            cell.title =
+                `${String.fromCharCode(97 + x)}${y + 1}`;
 
 
-            // ------------------------------------------------
-            // Checkerboard
-            // ------------------------------------------------
-
-            if (
-                (x + y) % 2 === 0
-            ) {
-
-                cell.classList.add(
-                    "light"
-                );
-
-            }
-
-            else {
-
-                cell.classList.add(
-                    "dark"
-                );
-
-            }
-
-
-            // ------------------------------------------------
-            // Goal square
-            // ------------------------------------------------
+            /*
+             * Goal cells.
+             */
 
             if (
-                isGoal(x, y)
+                (
+                    x === 0 &&
+                    y === 0
+                )
+                ||
+                (
+                    x === 8 &&
+                    y === 8
+                )
             ) {
 
                 cell.classList.add(
                     "goal"
                 );
-
             }
 
 
-            // ------------------------------------------------
-            // Selected square
-            // ------------------------------------------------
+            /*
+             * Selected cell.
+             */
 
             if (
-                selectedCell &&
-
-                selectedCell.x === x &&
-
-                selectedCell.y === y
+                selectedSquare &&
+                selectedSquare.x === x &&
+                selectedSquare.y === y
             ) {
 
                 cell.classList.add(
                     "selected"
                 );
-
             }
 
 
-            // ------------------------------------------------
-            // Valid move highlight
-            // ------------------------------------------------
+            /*
+             * Valid destination.
+             */
 
             if (
-                selectedCell &&
-                isPotentialMove(
+                selectedSquare &&
+                isValidDestination(
                     state,
-                    selectedCell,
+                    selectedSquare,
                     {
                         x,
                         y
@@ -550,153 +854,93 @@ function renderBoard(state) {
             ) {
 
                 cell.classList.add(
-                    "valid-move"
+                    "valid"
                 );
-
             }
 
 
-            // ------------------------------------------------
-            // Piece
-            // ------------------------------------------------
+            /*
+             * Piece.
+             */
 
             const piece =
-                getPiece(
-                    state.board,
-                    x,
-                    y
-                );
+                state.board[
+                    indexOf(x, y)
+                ];
 
 
             if (piece) {
 
-                const pieceElement =
-                    document.createElement("div");
+                cell.classList.add(
+                    `player-${piece.player}`
+                );
+
+                cell.classList.add(
+                    `piece-${piece.type}`
+                );
 
 
-                pieceElement.className =
-                    `piece player-${piece.player}`;
-
-
-                pieceElement.textContent =
-                    getPieceIcon(
-                        piece.type
+                const icon =
+                    document.createElement(
+                        "span"
                     );
 
+                icon.className =
+                    "piece-icon";
 
-                pieceElement.title =
-                    `Player ${piece.player} - ` +
-                    `${getPieceLabel(piece.type)}`;
+                icon.textContent =
+                    TYPE_ICON[
+                        piece.type
+                    ];
+
+
+                const label =
+                    document.createElement(
+                        "span"
+                    );
+
+                label.className =
+                    "piece-label";
+
+                label.textContent =
+                    TYPE_LABEL[
+                        piece.type
+                    ];
 
 
                 cell.appendChild(
-                    pieceElement
+                    icon
                 );
 
+                cell.appendChild(
+                    label
+                );
             }
-
-
-            // ------------------------------------------------
-            // Click handler
-            // ------------------------------------------------
-
-            cell.addEventListener(
-                "click",
-                () => {
-
-                    handleCellClick(
-                        x,
-                        y
-                    );
-
-                }
-            );
 
 
             boardElement.appendChild(
                 cell
             );
-
         }
-
     }
-
 }
 
 
-// ============================================================
-// POTENTIAL MOVE
-// ============================================================
-//
-// This is only for visual highlighting.
-// The actual move is checked again by validateMove().
-//
+/*
+ * CHECK VALID DESTINATION
+ */
 
-function isPotentialMove(
+function isValidDestination(
     state,
     from,
     to
 ) {
 
-    if (!state) {
-
+    if (!myPlayer) {
         return false;
-
     }
 
-
-    if (
-        from.x === to.x &&
-        from.y === to.y
-    ) {
-
-        return false;
-
-    }
-
-
-    const dx =
-        Math.abs(
-            to.x - from.x
-        );
-
-
-    const dy =
-        Math.abs(
-            to.y - from.y
-        );
-
-
-    if (
-        dx > 1 ||
-        dy > 1
-    ) {
-
-        return false;
-
-    }
-
-
-    const target =
-        getPiece(
-            state.board,
-            to.x,
-            to.y
-        );
-
-
-    // Own pieces cannot be entered.
-    if (
-        target &&
-        target.player === myPlayer
-    ) {
-
-        return false;
-
-    }
-
-
-    const test =
+    const result =
         validateMove(
             state,
             myPlayer,
@@ -704,376 +948,125 @@ function isPotentialMove(
             to
         );
 
-
-    return test.ok;
-
+    return result.ok;
 }
 
 
-// ============================================================
-// RENDER PLAYER STATUS
-// ============================================================
-
-function renderPlayerStatus() {
-
-    const playerIds =
-        getRoomPlayerIds();
-
-
-    const playerCount =
-        playerIds.length;
-
-
-    if (player1State) {
-
-        if (playerCount >= 1) {
-
-            player1State.textContent =
-                "Đã tham gia";
-
-        }
-
-        else {
-
-            player1State.textContent =
-                "Đang chờ...";
-
-        }
-
-    }
-
-
-    if (player2State) {
-
-        if (playerCount >= 2) {
-
-            player2State.textContent =
-                "Đã tham gia";
-
-        }
-
-        else {
-
-            player2State.textContent =
-                "Đang chờ...";
-
-        }
-
-    }
-
-}
-
-
-// ============================================================
-// RENDER TURN
-// ============================================================
+/*
+ * RENDER TURN
+ */
 
 function renderTurn(state) {
 
-    if (!turnLabel) {
-
-        return;
-
-    }
-
-
-    if (!state) {
-
-        turnLabel.textContent =
-            "Đang tải...";
-
-        return;
-
-    }
-
-
     if (state.winner) {
 
         turnLabel.textContent =
-            "Ván đã kết thúc";
+            `Player ${state.winner}`;
 
         return;
-
     }
-
-
-    if (
-        getPlayerCount() < 2
-    ) {
-
-        turnLabel.textContent =
-            "Đang chờ Player 2";
-
-        return;
-
-    }
-
 
     turnLabel.textContent =
         `Player ${state.turn}`;
-
 }
 
 
-// ============================================================
-// RENDER STATUS
-// ============================================================
-
-function renderStatus(state) {
-
-    if (!statusLabel) {
-
-        return;
-
-    }
-
-
-    if (!state) {
-
-        statusLabel.textContent =
-            "Đang kết nối...";
-
-        return;
-
-    }
-
-
-    const playerCount =
-        getPlayerCount();
-
-
-    // --------------------------------------------------------
-    // Winner
-    // --------------------------------------------------------
-
-    if (state.winner) {
-
-        if (
-            state.winner === myPlayer
-        ) {
-
-            statusLabel.textContent =
-                "Bạn đã thắng!";
-
-        }
-
-        else {
-
-            statusLabel.textContent =
-                `Player ${state.winner} thắng!`;
-
-        }
-
-        return;
-
-    }
-
-
-    // --------------------------------------------------------
-    // Waiting
-    // --------------------------------------------------------
-
-    if (
-        playerCount < 2
-    ) {
-
-        statusLabel.textContent =
-            "Đang chờ người chơi 2...";
-
-        return;
-
-    }
-
-
-    // --------------------------------------------------------
-    // My turn
-    // --------------------------------------------------------
-
-    if (
-        state.turn === myPlayer
-    ) {
-
-        statusLabel.textContent =
-            "Đến lượt của bạn";
-
-        return;
-
-    }
-
-
-    // --------------------------------------------------------
-    // Opponent turn
-    // --------------------------------------------------------
-
-    statusLabel.textContent =
-        `Đang chờ Player ${state.turn}`;
-
-}
-
-
-// ============================================================
-// RENDER COUNTS
-// ============================================================
+/*
+ * RENDER COUNTS
+ */
 
 function renderCounts(state) {
 
-    if (!countsContent) {
-
-        return;
-
-    }
-
-
-    countsContent.innerHTML = "";
-
-
-    for (
-        const player of [1, 2]
-    ) {
-
-        const counts = {
-
-            rock: 0,
-
-            paper: 0,
-
-            scissors: 0
-
-        };
-
-
-        for (
-            const piece
-            of state.board
-        ) {
-
-            if (
-                piece &&
-                piece.player === player
-            ) {
-
-                if (
-                    counts[piece.type] !== undefined
-                ) {
-
-                    counts[piece.type]++;
-
-                }
-
-            }
-
-        }
-
-
-        const total =
-            counts.rock +
-            counts.paper +
-            counts.scissors;
-
-
-        const playerBox =
-            document.createElement("div");
-
-
-        playerBox.className =
-            `count-player player-${player}`;
-
-
-        playerBox.innerHTML = `
-
-            <strong>
-                Player ${player}
-            </strong>
-
-            <div class="count-row">
-                <span>
-                    ${TYPE_ICON.rock}
-                    ${TYPE_LABEL.rock}
-                </span>
-
-                <span>
-                    ${counts.rock}
-                </span>
-            </div>
-
-            <div class="count-row">
-                <span>
-                    ${TYPE_ICON.paper}
-                    ${TYPE_LABEL.paper}
-                </span>
-
-                <span>
-                    ${counts.paper}
-                </span>
-            </div>
-
-            <div class="count-row">
-                <span>
-                    ${TYPE_ICON.scissors}
-                    ${TYPE_LABEL.scissors}
-                </span>
-
-                <span>
-                    ${counts.scissors}
-                </span>
-            </div>
-
-            <div class="count-total">
-                Tổng: ${total}
-            </div>
-
-        `;
-
-
-        countsContent.appendChild(
-            playerBox
+    const p1 =
+        countPieces(
+            state,
+            1
         );
 
-    }
+    const p2 =
+        countPieces(
+            state,
+            2
+        );
 
+
+    countsContent.innerHTML =
+        `
+        <div class="count-player">
+            <strong>Player 1</strong>
+
+            <span>
+                👊 ${p1.rock}
+                🍃 ${p1.paper}
+                ✂️ ${p1.scissors}
+            </span>
+        </div>
+
+        <div class="count-player">
+            <strong>Player 2</strong>
+
+            <span>
+                👊 ${p2.rock}
+                🍃 ${p2.paper}
+                ✂️ ${p2.scissors}
+            </span>
+        </div>
+        `;
 }
 
 
-// ============================================================
-// RENDER WIN BANNER
-// ============================================================
+/*
+ * COUNT PIECES
+ */
 
-function renderWinBanner(state) {
+function countPieces(
+    state,
+    player
+) {
 
-    if (!winBanner) {
+    const counts = {
+        rock: 0,
+        paper: 0,
+        scissors: 0
+    };
 
-        return;
 
+    for (
+        const piece of state.board
+    ) {
+
+        if (
+            piece &&
+            piece.player === player
+        ) {
+
+            counts[
+                piece.type
+            ]++;
+        }
     }
 
 
-    if (!state || !state.winner) {
+    return counts;
+}
 
-        winBanner.textContent = "";
+
+/*
+ * RENDER WIN
+ */
+
+function renderWin(state) {
+
+    if (!state.winner) {
 
         winBanner.classList.add(
             "hidden"
         );
 
+        winBanner.textContent =
+            "";
+
         return;
-
-    }
-
-
-    if (
-        state.winner === myPlayer
-    ) {
-
-        winBanner.textContent =
-            `🎉 Bạn thắng! ${state.winReason}`;
-
-    }
-
-    else {
-
-        winBanner.textContent =
-            `Player ${state.winner} thắng! ${state.winReason}`;
-
     }
 
 
@@ -1081,24 +1074,32 @@ function renderWinBanner(state) {
         "hidden"
     );
 
+
+    if (
+        state.winner ===
+        myPlayer
+    ) {
+
+        winBanner.textContent =
+            `🎉 Bạn thắng! ${state.winReason || ""}`;
+    }
+
+    else {
+
+        winBanner.textContent =
+            `Player ${state.winner} thắng. ${state.winReason || ""}`;
+    }
 }
 
 
-// ============================================================
-// RENDER COORDINATES
-// ============================================================
+/*
+ * COORDINATES
+ */
 
 function renderCoordinates() {
 
-    if (!coordinatesX) {
-
-        return;
-
-    }
-
-
-    coordinatesX.innerHTML = "";
-
+    coordinatesX.innerHTML =
+        "";
 
     for (
         let x = 0;
@@ -1107,498 +1108,41 @@ function renderCoordinates() {
     ) {
 
         const coordinate =
-            document.createElement("span");
-
+            document.createElement(
+                "span"
+            );
 
         coordinate.textContent =
             String.fromCharCode(
                 97 + x
             );
 
-
         coordinatesX.appendChild(
             coordinate
         );
-
     }
-
 }
 
 
-// ============================================================
-// RENDER EVERYTHING
-// ============================================================
-
-function render(state) {
-
-    if (!state) {
-
-        return;
-
-    }
-
-
-    currentState =
-        state;
-
-
-    renderPlayerStatus();
-
-    renderTurn(state);
-
-    renderStatus(state);
-
-    renderCounts(state);
-
-    renderWinBanner(state);
-
-    renderBoard(state);
-
-}
-
-
-// ============================================================
-// HANDLE CELL CLICK
-// ============================================================
-
-async function handleCellClick(
-    x,
-    y
-) {
-
-    if (!currentState) {
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // Must be Player 1 or Player 2
-    // ========================================================
-
-    if (
-        myPlayer !== 1 &&
-        myPlayer !== 2
-    ) {
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // Need two players
-    // ========================================================
-
-    if (
-        getPlayerCount() < 2
-    ) {
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // Game already finished
-    // ========================================================
-
-    if (
-        currentState.winner
-    ) {
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // Wrong turn
-    // ========================================================
-
-    if (
-        currentState.turn !== myPlayer
-    ) {
-
-        return;
-
-    }
-
-
-    const clickedPiece =
-        getPiece(
-            currentState.board,
-            x,
-            y
-        );
-
-
-    // ========================================================
-    // NOTHING SELECTED
-    // ========================================================
-
-    if (!selectedCell) {
-
-        // Empty square
-        if (!clickedPiece) {
-
-            return;
-
-        }
-
-
-        // Enemy piece
-        if (
-            clickedPiece.player !== myPlayer
-        ) {
-
-            return;
-
-        }
-
-
-        selectedCell = {
-
-            x,
-            y
-
-        };
-
-
-        render(
-            currentState
-        );
-
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // CLICK SAME PIECE
-    // ========================================================
-
-    if (
-
-        selectedCell.x === x &&
-
-        selectedCell.y === y
-
-    ) {
-
-        selectedCell = null;
-
-
-        render(
-            currentState
-        );
-
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // SELECT ANOTHER OWN PIECE
-    // ========================================================
-
-    if (
-
-        clickedPiece &&
-
-        clickedPiece.player === myPlayer
-
-    ) {
-
-        selectedCell = {
-
-            x,
-            y
-
-        };
-
-
-        render(
-            currentState
-        );
-
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // CREATE MOVE
-    // ========================================================
-
-    const from = {
-
-        x:
-            selectedCell.x,
-
-        y:
-            selectedCell.y
-
-    };
-
-
-    const to = {
-
-        x,
-
-        y
-
-    };
-
-
-    // ========================================================
-    // VALIDATE LOCALLY
-    // ========================================================
-
-    const validation =
-        validateMove(
-            currentState,
-            myPlayer,
-            from,
-            to
-        );
-
-
-    if (!validation.ok) {
-
-        // Keep the selected piece.
-        // The user can choose another square.
-
-        console.log(
-            "[OTTv2]",
-            validation.reason
-        );
-
-        return;
-
-    }
-
-
-    // ========================================================
-    // UPDATE SHARED STATE
-    // ========================================================
+/*
+ * COPY ROOM LINK
+ */
+
+async function copyRoomLink() {
 
     try {
 
-        await gameHandle.setData(
-            state => {
-
-                // --------------------------------------------
-                // Safety check: game finished
-                // --------------------------------------------
-
-                if (
-                    state.winner
-                ) {
-
-                    return state;
-
-                }
-
-
-                // --------------------------------------------
-                // Safety check: turn
-                // --------------------------------------------
-
-                if (
-                    state.turn !== myPlayer
-                ) {
-
-                    return state;
-
-                }
-
-
-                // --------------------------------------------
-                // Apply move
-                // --------------------------------------------
-
-                const result =
-                    applyMove(
-                        state,
-                        myPlayer,
-                        from,
-                        to
-                    );
-
-
-                // --------------------------------------------
-                // Invalid move
-                // --------------------------------------------
-
-                if (
-                    !result.result.ok
-                ) {
-
-                    return state;
-
-                }
-
-
-                // --------------------------------------------
-                // Valid move
-                // --------------------------------------------
-
-                return result.state;
-
-            }
+        await navigator.clipboard.writeText(
+            location.href
         );
 
+        statusLabel.textContent =
+            "Đã copy link phòng.";
     }
 
-    catch (error) {
+    catch {
 
-        console.error(
-            "[OTTv2] Failed to update game state:",
-            error
-        );
-
-        return;
-
+        statusLabel.textContent =
+            "Không thể copy link.";
     }
-
-
-    // ========================================================
-    // CLEAR SELECTION
-    // ========================================================
-
-    selectedCell = null;
-
-
-    // ========================================================
-    // Render will normally be triggered by PlayHTML.
-    // Render here as well for immediate local feedback.
-    // ========================================================
-
-    if (currentState) {
-
-        render(
-            currentState
-        );
-
-    }
-
 }
-
-
-// ============================================================
-// COPY ROOM LINK
-// ============================================================
-
-if (copyButton) {
-
-    copyButton.addEventListener(
-        "click",
-        async () => {
-
-            try {
-
-                await navigator.clipboard.writeText(
-                    window.location.href
-                );
-
-
-                const oldText =
-                    copyButton.textContent;
-
-
-                copyButton.textContent =
-                    "Đã copy!";
-
-
-                setTimeout(
-                    () => {
-
-                        copyButton.textContent =
-                            oldText;
-
-                    },
-                    1500
-                );
-
-            }
-
-            catch (error) {
-
-                console.error(
-                    "[OTTv2] Copy failed:",
-                    error
-                );
-
-            }
-
-        }
-    );
-
-}
-
-
-// ============================================================
-// BACK TO LOBBY
-// ============================================================
-
-if (backLobbyButton) {
-
-    backLobbyButton.addEventListener(
-        "click",
-        () => {
-
-            window.location.href =
-                "index.html";
-
-        }
-    );
-
-}
-
-
-// ============================================================
-// COORDINATES
-// ============================================================
-
-renderCoordinates();
-
-
-// ============================================================
-// INITIAL RENDER
-// ============================================================
-
-render(
-    currentState
-);
-
-
-// ============================================================
-// DEBUG
-// ============================================================
-
-console.log(
-    "[OTTv2] Room:",
-    roomId
-);
-
-console.log(
-    "[OTTv2] My identity:",
-    playhtml.presence
-        .getMyIdentity()
-        ?.publicKey
-);
-
-console.log(
-    "[OTTv2] Players:",
-    getRoomPlayerIds()
-);
-
-console.log(
-    "[OTTv2] My player:",
-    myPlayer
-);
