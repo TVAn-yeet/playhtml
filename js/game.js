@@ -611,20 +611,29 @@ function handleBoardClick(event) {
         }
     );
 }
-
 function makeMove(from, to) {
 
+    console.log("=== MAKE MOVE ===");
+    console.log("from:", from);
+    console.log("to:", to);
+    console.log("myPlayer:", myPlayer);
+    console.log("currentState:", currentState);
+    console.log("gameHandle:", gameHandle);
+
     if (!gameHandle) {
+        console.error("gameHandle is null");
+        statusLabel.textContent =
+            "Lỗi: gameHandle chưa sẵn sàng.";
         return;
     }
 
     if (!currentState) {
+        console.error("currentState is null");
+        statusLabel.textContent =
+            "Lỗi: game state chưa sẵn sàng.";
         return;
     }
 
-    /*
-     * Local validation.
-     */
     const check =
         validateMove(
             currentState,
@@ -632,6 +641,8 @@ function makeMove(from, to) {
             from,
             to
         );
+
+    console.log("validation:", check);
 
     if (!check.ok) {
 
@@ -641,61 +652,87 @@ function makeMove(from, to) {
         return;
     }
 
-    /*
-     * Clear selection.
-     */
     selectedSquare = null;
 
-    /*
-     * Update shared state.
-     *
-     * IMPORTANT:
-     * PlayHTML expects the updater
-     * to mutate the draft.
-     */
-    gameHandle.setData(
-        draft => {
+    statusLabel.textContent =
+        "Đang cập nhật...";
 
-            const result =
-                applyMove(
-                    draft,
-                    myPlayer,
-                    from,
-                    to
+    try {
+
+        gameHandle.setData(
+            draft => {
+
+                console.log(
+                    "SETDATA CALLBACK EXECUTED"
                 );
 
-            /*
-             * Something changed between
-             * local validation and this
-             * shared-state update.
-             */
-            if (!result.result.ok) {
-                return;
+                console.log(
+                    "draft before:",
+                    draft
+                );
+
+                const result =
+                    applyMove(
+                        draft,
+                        myPlayer,
+                        from,
+                        to
+                    );
+
+                console.log(
+                    "applyMove result:",
+                    result
+                );
+
+                if (!result.result.ok) {
+
+                    console.error(
+                        "applyMove failed:",
+                        result.result
+                    );
+
+                    return;
+                }
+
+                draft.board =
+                    result.state.board;
+
+                draft.turn =
+                    result.state.turn;
+
+                draft.winner =
+                    result.state.winner;
+
+                draft.winReason =
+                    result.state.winReason;
+
+                draft.moveNumber =
+                    result.state.moveNumber;
+
+                console.log(
+                    "draft after:",
+                    draft
+                );
             }
+        );
 
-            const nextState =
-                result.state;
+        console.log(
+            "setData() called successfully"
+        );
 
-            /*
-             * Copy the new state into
-             * the PlayHTML draft.
-             */
-            draft.board =
-                nextState.board;
+    }
+    catch (error) {
 
-            draft.turn =
-                nextState.turn;
+        console.error(
+            "setData ERROR:",
+            error
+        );
 
-            draft.winner =
-                nextState.winner;
+        statusLabel.textContent =
+            "Lỗi khi cập nhật game.";
 
-            draft.winReason =
-                nextState.winReason;
-
-            draft.moveNumber =
-                nextState.moveNumber;
-        }
-    );
+        return;
+    }
 
     statusLabel.textContent =
         "Đang cập nhật...";
