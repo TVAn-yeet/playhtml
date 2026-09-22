@@ -1,92 +1,62 @@
-import { playhtml }
-    from "https://unpkg.com/playhtml";
-
+import { playhtml } from "https://unpkg.com/playhtml";
 
 import {
-
     SIZE,
-
+    TYPES,
     TYPE_LABEL,
-
     TYPE_ICON,
-
     createInitialBoard,
-
     indexOf,
-
-    isOneStep,
-
     isGoal,
-
     validateMove,
-
-    applyMove,
-
-    countPieces
-
+    applyMove
 } from "./rules.js";
 
 
-
-/*
- * Read Room ID from URL.
- *
- * Example:
- *
- * game.html?room=ABC123
- */
+// ============================================================
+// ROOM
+// ============================================================
 
 const params =
-    new URLSearchParams(
-        location.search
-    );
-
+    new URLSearchParams(window.location.search);
 
 const roomId =
     params.get("room");
 
 
-
 if (!roomId) {
 
-    location.href =
-        "./index.html";
+    document.body.innerHTML = `
+        <h2>Không tìm thấy Room ID</h2>
+        <p>Hãy quay lại lobby và tạo hoặc tham gia một phòng.</p>
+    `;
 
-    throw new Error(
-        "Missing Room ID"
-    );
+    throw new Error("Missing room ID");
 
 }
 
 
+// ============================================================
+// GAME STATE ELEMENT
+// ============================================================
 
-/*
- * Hidden element used as
- * shared PlayHTML game state.
- */
+const gameStateElement =
+    document.createElement("div");
 
-const stateElement =
-    document.createElement(
-        "div"
-    );
-
-
-stateElement.id =
+gameStateElement.id =
     "game-state";
 
-
-stateElement.hidden = true;
-
+gameStateElement.style.display =
+    "none";
 
 document.body.appendChild(
-    stateElement
+    gameStateElement
 );
 
 
-
-/*
- * Initial shared state.
- */
+// ============================================================
+// INITIAL STATE
+// ============================================================
 
 const initialState = {
 
@@ -116,34 +86,43 @@ const initialState = {
 };
 
 
+// ============================================================
+// VARIABLES
+// ============================================================
 
-/*
- * Register shared game state.
- */
+let myPlayer = 0;
 
-await playhtml.register(
-    "game-state",
-    {
+let selectedCell = null;
 
-        defaultData:
-            initialState,
+let gameHandle = null;
 
 
-        updateElement:
-            ({ data }) => {
+// ============================================================
+// REGISTER PLAYHTML STATE
+// ============================================================
 
-                render(data);
+gameHandle =
+    await playhtml.register(
+        "game-state",
+        {
 
-            }
+            defaultData:
+                initialState,
 
-    }
-);
+            updateElement:
+                ({ data }) => {
+
+                    render(data);
+
+                }
+
+        }
+    );
 
 
-
-/*
- * Room ID creates isolated multiplayer state.
- */
+// ============================================================
+// INIT PLAYHTML
+// ============================================================
 
 await playhtml.init({
 
@@ -153,268 +132,397 @@ await playhtml.init({
 });
 
 
-/*
- * Wait until PlayHTML finishes
- * the initial synchronization.
- */
-
 await playhtml.ready;
 
 
+// ============================================================
+// PRESENCE
+// ============================================================
 
-/*
- * Handle for changing shared state.
- */
+function getRoomPlayerIds() {
 
-const handle =
-    playhtml.getHandle(
-        "game-state"
+    const ids =
+        new Set();
+
+    const presences =
+        playhtml.presence.getPresences();
+
+
+    for (
+        const presence
+        of presences.values()
+    ) {
+
+        const id =
+            presence
+                .playerIdentity
+                ?.publicKey;
+
+
+        if (id) {
+
+            ids.add(id);
+
+        }
+
+    }
+
+
+    return [
+        ...ids
+    ].sort();
+
+}
+
+
+// ============================================================
+// UPDATE PLAYER ASSIGNMENT
+// ============================================================
+
+function updatePlayerAssignment() {
+
+    const playerIds =
+        getRoomPlayerIds();
+
+
+    const myIdentity =
+        playhtml.presence
+            .getMyIdentity();
+
+
+    const myId =
+        myIdentity?.publicKey;
+
+
+    if (!myId) {
+
+        myPlayer = 0;
+
+        render();
+
+        return;
+
+    }
+
+
+    const index =
+        playerIds.indexOf(
+            myId
+        );
+
+
+    if (index === 0) {
+
+        myPlayer = 1;
+
+    }
+
+    else if (index === 1) {
+
+        myPlayer = 2;
+
+    }
+
+    else {
+
+        myPlayer = 0;
+
+    }
+
+
+    render();
+
+}
+
+
+// ============================================================
+// ANNOUNCE PRESENCE
+// ============================================================
+
+try {
+
+    await playhtml.presence.setMyPresence(
+        "ottv2-players",
+        {}
     );
 
+}
+
+catch (error) {
+
+    console.warn(
+        "Presence error:",
+        error
+    );
+
+}
 
 
-/*
- * Identify this browser's player.
- *
- * Use PlayHTML's stable browser identity
- * so different browsers joining the same
- * room can become different players.
- */
+// ============================================================
+// PRESENCE CHANGE
+// ============================================================
 
-let myPlayer = 0;
+try {
 
+    playhtml.presence.onPresenceChange(
+        "ottv2-players",
+        () => {
 
-const myIdentity =
-    playhtml.presence?.getMyIdentity?.();
-
-
-const myId =
-    myIdentity?.publicKey ||
-    crypto.randomUUID();
-
-
-
-/*
- * Try to occupy Player 1 or Player 2.
- */
-
-function claimPlayer() {
-
-    handle.setData(
-        data => {
-
-            const players = {
-
-                ...data.players
-
-            };
-
-
-            /*
-             * Already Player 1.
-             */
-
-            if (
-                players[1] === myId
-            ) {
-
-                myPlayer = 1;
-
-                return data;
-
-            }
-
-
-            /*
-             * Already Player 2.
-             */
-
-            if (
-                players[2] === myId
-            ) {
-
-                myPlayer = 2;
-
-                return data;
-
-            }
-
-
-            /*
-             * Player 1 is empty.
-             */
-
-            if (
-                !players[1]
-            ) {
-
-                players[1] = myId;
-
-                myPlayer = 1;
-
-            }
-
-
-            /*
-             * Player 1 occupied,
-             * so take Player 2.
-             */
-
-            else if (
-                !players[2]
-            ) {
-
-                players[2] = myId;
-
-                myPlayer = 2;
-
-            }
-
-
-            /*
-             * Both players are occupied.
-             *
-             * This browser becomes spectator.
-             */
-
-            else {
-
-                myPlayer = 0;
-
-            }
-
-
-            return {
-
-                ...data,
-
-                players
-
-            };
+            updatePlayerAssignment();
 
         }
     );
 
 }
 
+catch (error) {
 
-claimPlayer();
+    console.warn(
+        "Presence listener error:",
+        error
+    );
+
+}
 
 
+// ============================================================
+// INITIAL PLAYER ASSIGNMENT
+// ============================================================
 
-/*
- * DOM references.
- */
+updatePlayerAssignment();
 
-const boardEl =
+
+// ============================================================
+// DOM
+// ============================================================
+
+const boardElement =
     document.getElementById(
         "board"
     );
 
-
-const turnLabel =
+const statusElement =
     document.getElementById(
-        "turn-label"
+        "status"
+    );
+
+const player1State =
+    document.getElementById(
+        "player1-state"
+    );
+
+const player2State =
+    document.getElementById(
+        "player2-state"
+    );
+
+const myPlayerElement =
+    document.getElementById(
+        "my-player"
+    );
+
+const roomElement =
+    document.getElementById(
+        "room-id"
+    );
+
+const copyButton =
+    document.getElementById(
+        "copy-link"
+    );
+
+const backButton =
+    document.getElementById(
+        "back-lobby"
     );
 
 
-const statusLabel =
-    document.getElementById(
-        "status-label"
-    );
+// ============================================================
+// ROOM ID
+// ============================================================
+
+if (roomElement) {
+
+    roomElement.textContent =
+        roomId;
+
+}
 
 
-const p1State =
-    document.getElementById(
-        "p1-state"
-    );
+// ============================================================
+// PLAYER COUNT
+// ============================================================
+
+function getPlayerCount() {
+
+    return getRoomPlayerIds()
+        .length;
+
+}
 
 
-const p2State =
-    document.getElementById(
-        "p2-state"
-    );
+// ============================================================
+// GET PIECE
+// ============================================================
 
+function getPiece(
+    board,
+    x,
+    y
+) {
 
-const countsContent =
-    document.getElementById(
-        "counts-content"
-    );
-
-
-const winBanner =
-    document.getElementById(
-        "win-banner"
-    );
-
-
-const roomLabel =
-    document.getElementById(
-        "room-label"
-    );
-
-
-const coordinatesX =
-    document.getElementById(
-        "coordinates-x"
-    );
-
-
-
-roomLabel.textContent =
-    `Room: ${roomId}`;
-
-
-coordinatesX.innerHTML =
-
-    "abcdefghi"
-
-        .split("")
-
-        .map(
-            x =>
-                `<span>${x}</span>`
+    return board[
+        indexOf(
+            x,
+            y
         )
+    ];
 
-        .join("");
-
-
-
-/*
- * Currently selected piece.
- */
-
-let selected = null;
+}
 
 
-/*
- * Latest shared state.
- */
-
-let currentState = null;
-
-
-
-/*
- * Render complete game.
- */
+// ============================================================
+// RENDER
+// ============================================================
 
 function render(state) {
 
-    currentState = state;
+    if (!state) {
+
+        return;
+
+    }
 
 
-    /*
-     * Clear old board.
-     */
-
-    boardEl.replaceChildren();
+    const playerCount =
+        getPlayerCount();
 
 
+    // ========================================================
+    // PLAYER 1 STATUS
+    // ========================================================
 
-    /*
-     * Create 9x9 board.
-     */
+    if (player1State) {
+
+        player1State.textContent =
+            playerCount >= 1
+                ? "Đã tham gia"
+                : "Đang chờ...";
+
+    }
+
+
+    // ========================================================
+    // PLAYER 2 STATUS
+    // ========================================================
+
+    if (player2State) {
+
+        player2State.textContent =
+            playerCount >= 2
+                ? "Đã tham gia"
+                : "Đang chờ...";
+
+    }
+
+
+    // ========================================================
+    // MY PLAYER
+    // ========================================================
+
+    if (myPlayerElement) {
+
+        if (myPlayer === 1) {
+
+            myPlayerElement.textContent =
+                "Bạn là Player 1";
+
+        }
+
+        else if (myPlayer === 2) {
+
+            myPlayerElement.textContent =
+                "Bạn là Player 2";
+
+        }
+
+        else {
+
+            myPlayerElement.textContent =
+                "Spectator";
+
+        }
+
+    }
+
+
+    // ========================================================
+    // STATUS
+    // ========================================================
+
+    if (statusElement) {
+
+        if (state.winner) {
+
+            if (
+                state.winner === myPlayer
+            ) {
+
+                statusElement.textContent =
+                    `Bạn thắng! ${state.winReason}`;
+
+            }
+
+            else {
+
+                statusElement.textContent =
+                    `Player ${state.winner} thắng! ${state.winReason}`;
+
+            }
+
+        }
+
+        else if (
+            playerCount < 2
+        ) {
+
+            statusElement.textContent =
+                "Đang chờ người chơi 2...";
+
+        }
+
+        else if (
+            state.turn === myPlayer
+        ) {
+
+            statusElement.textContent =
+                "Đến lượt của bạn";
+
+        }
+
+        else {
+
+            statusElement.textContent =
+                `Đến lượt Player ${state.turn}`;
+
+        }
+
+    }
+
+
+    // ========================================================
+    // BOARD
+    // ========================================================
+
+    if (!boardElement) {
+
+        return;
+
+    }
+
+
+    boardElement.innerHTML = "";
+
 
     for (
         let y = 0;
@@ -438,46 +546,59 @@ function render(state) {
                 "cell";
 
 
-            cell.type =
-                "button";
+            // =================================================
+            // COORDINATE
+            // =================================================
+
+            const file =
+                String.fromCharCode(
+                    97 + x
+                );
+
+            const rank =
+                y + 1;
+
+
+            const coordinate =
+                `${file}${rank}`;
 
 
             cell.dataset.x =
-                String(x);
-
+                x;
 
             cell.dataset.y =
-                String(y);
+                y;
+
+            cell.dataset.coordinate =
+                coordinate;
 
 
+            // =================================================
+            // CHECKERBOARD
+            // =================================================
 
-            /*
-             * Coordinate label.
-             */
+            if (
+                (x + y) % 2 === 0
+            ) {
 
-            const coord =
-                document.createElement(
-                    "span"
+                cell.classList.add(
+                    "light"
                 );
 
+            }
 
-            coord.className =
-                "coord";
+            else {
 
+                cell.classList.add(
+                    "dark"
+                );
 
-            coord.textContent =
-                `${"abcdefghi"[x]}${y + 1}`;
-
-
-            cell.appendChild(
-                coord
-            );
+            }
 
 
-
-            /*
-             * Goal squares.
-             */
+            // =================================================
+            // GOAL
+            // =================================================
 
             if (
                 isGoal(x, y)
@@ -490,19 +611,16 @@ function render(state) {
             }
 
 
-
-            /*
-             * Selected piece.
-             */
+            // =================================================
+            // SELECTED
+            // =================================================
 
             if (
+                selectedCell &&
 
-                selected &&
+                selectedCell.x === x &&
 
-                selected.x === x &&
-
-                selected.y === y
-
+                selectedCell.y === y
             ) {
 
                 cell.classList.add(
@@ -512,105 +630,67 @@ function render(state) {
             }
 
 
-
-            /*
-             * Show valid moves.
-             */
+            // =================================================
+            // VALID MOVE
+            // =================================================
 
             if (
-
-                selected &&
-
-                myPlayer &&
-
-                isOneStep(
-
-                    selected,
-
-                    { x, y }
-
-                )
-
+                isSelectedMove(x, y)
             ) {
 
-                const test =
-                    validateMove(
-
-                        state,
-
-                        myPlayer,
-
-                        selected,
-
-                        { x, y }
-
-                    );
-
-
-                if (
-                    test.ok
-                ) {
-
-                    cell.classList.add(
-                        "valid"
-                    );
-
-                }
-
-            }
-
-
-
-            /*
-             * Draw piece.
-             */
-
-            const piece =
-                state.board[
-                    indexOf(x, y)
-                ];
-
-
-            if (piece) {
-
-                const pieceEl =
-                    document.createElement(
-                        "div"
-                    );
-
-
-                pieceEl.className =
-                    `piece p${piece.player}`;
-
-
-                pieceEl.textContent =
-                    TYPE_ICON[
-                        piece.type
-                    ];
-
-
-                pieceEl.title =
-
-                    `Player ${piece.player}` +
-
-                    ` - ` +
-
-                    TYPE_LABEL[
-                        piece.type
-                    ];
-
-
-                cell.appendChild(
-                    pieceEl
+                cell.classList.add(
+                    "valid-move"
                 );
 
             }
 
 
+            // =================================================
+            // PIECE
+            // =================================================
 
-            /*
-             * Click handler.
-             */
+            const piece =
+                getPiece(
+                    state.board,
+                    x,
+                    y
+                );
+
+
+            if (piece) {
+
+                const pieceElement =
+                    document.createElement(
+                        "div"
+                    );
+
+
+                pieceElement.className =
+                    `piece player-${piece.player}`;
+
+
+                pieceElement.textContent =
+                    TYPE_ICON[
+                        piece.type
+                    ];
+
+
+                pieceElement.title =
+                    `Player ${piece.player} - ${
+                        TYPE_LABEL[piece.type]
+                    }`;
+
+
+                cell.appendChild(
+                    pieceElement
+                );
+
+            }
+
+
+            // =================================================
+            // CLICK
+            // =================================================
 
             cell.addEventListener(
                 "click",
@@ -618,14 +698,15 @@ function render(state) {
 
                     onCellClick(
                         x,
-                        y
+                        y,
+                        state
                     );
 
                 }
             );
 
 
-            boardEl.appendChild(
+            boardElement.appendChild(
                 cell
             );
 
@@ -633,535 +714,448 @@ function render(state) {
 
     }
 
+}
 
 
-    /*
-     * Turn.
-     */
+// ============================================================
+// VALID MOVE DISPLAY
+// ============================================================
 
-    if (state.winner) {
+function isSelectedMove(
+    x,
+    y
+) {
 
-        turnLabel.textContent =
-            `Player ${state.winner} thắng`;
+    if (!selectedCell) {
 
-    }
-
-    else {
-
-        turnLabel.textContent =
-            `Player ${state.turn}`;
+        return false;
 
     }
 
 
+    const dx =
+        Math.abs(
+            x -
+            selectedCell.x
+        );
 
-    /*
-     * Status.
-     */
 
-    if (state.winner) {
+    const dy =
+        Math.abs(
+            y -
+            selectedCell.y
+        );
 
-        statusLabel.textContent =
-            state.winReason;
 
-    }
+    return (
 
-    else if (
-        !state.players[1] ||
-        !state.players[2]
+        dx <= 1 &&
+
+        dy <= 1 &&
+
+        (
+            dx !== 0 ||
+            dy !== 0
+        )
+
+    );
+
+}
+
+
+// ============================================================
+// CELL CLICK
+// ============================================================
+
+async function onCellClick(
+    x,
+    y,
+    state
+) {
+
+    // ========================================================
+    // SPECTATOR
+    // ========================================================
+
+    if (
+        myPlayer !== 1 &&
+        myPlayer !== 2
     ) {
 
-        statusLabel.textContent =
-            "Đang chờ người chơi 2";
+        return;
 
     }
 
-    else if (
-        myPlayer === 0
+
+    // ========================================================
+    // WAITING FOR PLAYER 2
+    // ========================================================
+
+    if (
+        getPlayerCount() < 2
     ) {
 
-        statusLabel.textContent =
-            "Spectator";
-
-    }
-
-    else if (
-        state.turn === myPlayer
-    ) {
-
-        statusLabel.textContent =
-            "Đến lượt bạn";
-
-    }
-
-    else {
-
-        statusLabel.textContent =
-            "Đang chờ đối thủ";
+        return;
 
     }
 
 
-
-    /*
-     * Players.
-     */
-
-    p1State.textContent =
-
-        state.players[1]
-
-            ? "Đã tham gia"
-
-            : "Đang chờ...";
-
-
-    p2State.textContent =
-
-        state.players[2]
-
-            ? "Đã tham gia"
-
-            : "Đang chờ...";
-
-
-    renderCounts(state);
-
-
-
-    /*
-     * Winner overlay.
-     */
+    // ========================================================
+    // GAME OVER
+    // ========================================================
 
     if (
         state.winner
     ) {
 
-        winBanner.textContent =
-
-            `Player ${state.winner}` +
-
-            ` thắng — ` +
-
-            state.winReason;
-
-
-        winBanner.classList.remove(
-            "hidden"
-        );
+        return;
 
     }
 
-    else {
 
-        winBanner.classList.add(
-            "hidden"
-        );
+    // ========================================================
+    // WRONG TURN
+    // ========================================================
+
+    if (
+        state.turn !== myPlayer
+    ) {
+
+        return;
 
     }
 
-}
 
-
-
-/*
- * Display remaining pieces.
- */
-
-function renderCounts(state) {
-
-    const p1 =
-        countPieces(
+    const clickedPiece =
+        getPiece(
             state.board,
-            1
+            x,
+            y
         );
 
 
-    const p2 =
-        countPieces(
-            state.board,
-            2
-        );
+    // ========================================================
+    // SELECT PIECE
+    // ========================================================
 
+    if (!selectedCell) {
 
-    countsContent.innerHTML = `
+        if (!clickedPiece) {
 
-        <div class="count-row">
+            return;
 
-            <span>
-                P1 👊
-            </span>
+        }
 
-            <strong>
-                ${p1.rock}
-            </strong>
-
-        </div>
-
-
-        <div class="count-row">
-
-            <span>
-                P1 🍃
-            </span>
-
-            <strong>
-                ${p1.paper}
-            </strong>
-
-        </div>
-
-
-        <div class="count-row">
-
-            <span>
-                P1 ✂️
-            </span>
-
-            <strong>
-                ${p1.scissors}
-            </strong>
-
-        </div>
-
-
-        <hr>
-
-
-        <div class="count-row">
-
-            <span>
-                P2 👊
-            </span>
-
-            <strong>
-                ${p2.rock}
-            </strong>
-
-        </div>
-
-
-        <div class="count-row">
-
-            <span>
-                P2 🍃
-            </span>
-
-            <strong>
-                ${p2.paper}
-            </strong>
-
-        </div>
-
-
-        <div class="count-row">
-
-            <span>
-                P2 ✂️
-            </span>
-
-            <strong>
-                ${p2.scissors}
-            </strong>
-
-        </div>
-
-    `;
-
-}
-
-
-
-/*
- * Handle board click.
- */
-
-function onCellClick(
-    x,
-    y
-) {
-
-    /*
-     * Spectator.
-     */
-
-    if (
-        !currentState ||
-        myPlayer === 0
-    ) {
-
-        return;
-
-    }
-
-
-
-    /*
-     * Game finished.
-     */
-
-    if (
-        currentState.winner
-    ) {
-
-        return;
-
-    }
-
-
-
-    /*
-     * Wait until both players have joined.
-     */
-
-    if (
-        !currentState.players[1] ||
-        !currentState.players[2]
-    ) {
-
-        return;
-
-    }
-
-
-
-    /*
-     * Only allow movement
-     * on the current player's turn.
-     */
-
-    if (
-        currentState.turn !== myPlayer
-    ) {
-
-        return;
-
-    }
-
-
-
-    const piece =
-        currentState.board[
-            indexOf(x, y)
-        ];
-
-
-
-    /*
-     * We already selected a piece.
-     */
-
-    if (selected) {
-
-        /*
-         * Click same piece:
-         * deselect.
-         */
 
         if (
-
-            selected.x === x &&
-
-            selected.y === y
-
+            clickedPiece.player !==
+            myPlayer
         ) {
 
-            selected = null;
-
-            render(
-                currentState
-            );
-
             return;
 
         }
 
 
-
-        /*
-         * Validate destination.
-         */
-
-        const check =
-            validateMove(
-
-                currentState,
-
-                myPlayer,
-
-                selected,
-
-                { x, y }
-
-            );
-
-
-
-        /*
-         * Invalid.
-         */
-
-        if (!check.ok) {
-
-            /*
-             * Selecting another own piece.
-             */
-
-            if (
-                piece &&
-                piece.player === myPlayer
-            ) {
-
-                selected = {
-
-                    x,
-
-                    y
-
-                };
-
-
-                render(
-                    currentState
-                );
-
-            }
-
-            else {
-
-                alert(
-                    check.reason
-                );
-
-            }
-
-
-            return;
-
-        }
-
-
-
-        /*
-         * Valid move.
-         *
-         * Re-read shared state
-         * immediately before applying.
-         */
-
-        handle.setData(
-            data => {
-
-                const result =
-                    applyMove(
-
-                        data,
-
-                        myPlayer,
-
-                        selected,
-
-                        { x, y }
-
-                    );
-
-
-                if (
-                    result.result.ok
-                ) {
-
-                    return result.state;
-
-                }
-
-
-                return data;
-
-            }
-        );
-
-
-        selected = null;
-
-        return;
-
-    }
-
-
-
-    /*
-     * Nothing selected yet.
-     *
-     * Select own piece.
-     */
-
-    if (
-
-        piece &&
-
-        piece.player === myPlayer
-
-    ) {
-
-        selected = {
+        selectedCell = {
 
             x,
-
             y
 
         };
 
 
-        render(
-            currentState
-        );
+        render(state);
+
+        return;
 
     }
+
+
+    // ========================================================
+    // CLICK SAME PIECE
+    // ========================================================
+
+    if (
+
+        selectedCell.x === x &&
+
+        selectedCell.y === y
+
+    ) {
+
+        selectedCell = null;
+
+        render(state);
+
+        return;
+
+    }
+
+
+    // ========================================================
+    // CLICK ANOTHER OWN PIECE
+    // ========================================================
+
+    if (
+
+        clickedPiece &&
+
+        clickedPiece.player ===
+        myPlayer
+
+    ) {
+
+        selectedCell = {
+
+            x,
+            y
+
+        };
+
+
+        render(state);
+
+        return;
+
+    }
+
+
+    // ========================================================
+    // PREPARE MOVE
+    // ========================================================
+
+    const from = {
+
+        x:
+            selectedCell.x,
+
+        y:
+            selectedCell.y
+
+    };
+
+
+    const to = {
+
+        x,
+
+        y
+
+    };
+
+
+    // ========================================================
+    // VALIDATE MOVE LOCALLY
+    // ========================================================
+
+    const validation =
+        validateMove(
+            state,
+            myPlayer,
+            from,
+            to
+        );
+
+
+    if (!validation.ok) {
+
+        console.log(
+            validation.reason
+        );
+
+        return;
+
+    }
+
+
+    // ========================================================
+    // UPDATE SHARED STATE
+    // ========================================================
+
+    await gameHandle.setData(
+        currentState => {
+
+            // -----------------------------------------------
+            // Game already finished
+            // -----------------------------------------------
+
+            if (
+                currentState.winner
+            ) {
+
+                return currentState;
+
+            }
+
+
+            // -----------------------------------------------
+            // Wrong turn
+            // -----------------------------------------------
+
+            if (
+                currentState.turn !==
+                myPlayer
+            ) {
+
+                return currentState;
+
+            }
+
+
+            // -----------------------------------------------
+            // Apply move
+            // -----------------------------------------------
+
+            const result =
+                applyMove(
+                    currentState,
+                    myPlayer,
+                    from,
+                    to
+                );
+
+
+            // -----------------------------------------------
+            // Invalid
+            // -----------------------------------------------
+
+            if (
+                !result.result.ok
+            ) {
+
+                return currentState;
+
+            }
+
+
+            // -----------------------------------------------
+            // Return new state
+            // -----------------------------------------------
+
+            return result.state;
+
+        }
+    );
+
+
+    // ========================================================
+    // CLEAR SELECTION
+    // ========================================================
+
+    selectedCell = null;
+
+
+    render(
+        state
+    );
 
 }
 
 
+// ============================================================
+// COPY ROOM LINK
+// ============================================================
 
-/*
- * Copy room URL.
- */
+if (copyButton) {
 
-document
-    .getElementById(
-        "copy-link"
-    )
-    .addEventListener(
+    copyButton.addEventListener(
         "click",
         async () => {
 
-            await navigator.clipboard
-                .writeText(
-                    location.href
+            try {
+
+                await navigator.clipboard.writeText(
+                    window.location.href
                 );
 
-            alert(
-                "Đã copy link phòng."
-            );
+
+                const oldText =
+                    copyButton.textContent;
+
+
+                copyButton.textContent =
+                    "Đã copy!";
+
+
+                setTimeout(
+                    () => {
+
+                        copyButton.textContent =
+                            oldText;
+
+                    },
+                    1500
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Copy failed:",
+                    error
+                );
+
+            }
 
         }
     );
 
+}
 
 
-/*
- * Back to lobby.
- */
+// ============================================================
+// BACK TO LOBBY
+// ============================================================
 
-document
-    .getElementById(
-        "back-lobby"
-    )
-    .addEventListener(
+if (backButton) {
+
+    backButton.addEventListener(
         "click",
         () => {
 
-            location.href =
-                "./index.html";
+            window.location.href =
+                "index.html";
 
         }
     );
+
+}
+
+
+// ============================================================
+// INITIAL RENDER
+// ============================================================
+
+const initialData =
+    gameHandle.getData?.();
+
+
+if (initialData) {
+
+    render(
+        initialData
+    );
+
+}
+
+
+// ============================================================
+// DEBUG
+// ============================================================
+
+console.log(
+    "[OTTv2] Room:",
+    roomId
+);
+
+console.log(
+    "[OTTv2] My player:",
+    myPlayer
+);
+
+console.log(
+    "[OTTv2] Players:",
+    getRoomPlayerIds()
+);
