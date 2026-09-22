@@ -119,9 +119,6 @@ const initialState = {
 
 /*
  * Register shared game state.
- *
- * The exact custom-state API may vary
- * with the PlayHTML version installed.
  */
 
 await playhtml.register(
@@ -145,8 +142,6 @@ await playhtml.register(
 
 
 /*
- * IMPORTANT:
- *
  * Room ID creates isolated multiplayer state.
  */
 
@@ -157,6 +152,11 @@ await playhtml.init({
 
 });
 
+
+/*
+ * Wait until PlayHTML finishes
+ * the initial synchronization.
+ */
 
 await playhtml.ready;
 
@@ -175,30 +175,22 @@ const handle =
 
 /*
  * Identify this browser's player.
+ *
+ * Use PlayHTML's stable browser identity
+ * so different browsers joining the same
+ * room can become different players.
  */
 
-const playerKey =
-    `ottv2-player-${roomId}`;
+let myPlayer = 0;
 
 
-let myPlayer =
-    Number(
-        localStorage.getItem(
-            playerKey
-        )
-    );
+const myIdentity =
+    playhtml.presence?.getMyIdentity?.();
 
 
-
-if (
-    ![1, 2].includes(
-        myPlayer
-    )
-) {
-
-    myPlayer = null;
-
-}
+const myId =
+    myIdentity?.publicKey ||
+    crypto.randomUUID();
 
 
 
@@ -218,79 +210,78 @@ function claimPlayer() {
             };
 
 
-
             /*
-             * Existing player assignment.
+             * Already Player 1.
              */
 
             if (
-                myPlayer &&
-                players[myPlayer]
+                players[1] === myId
             ) {
+
+                myPlayer = 1;
 
                 return data;
 
             }
 
 
+            /*
+             * Already Player 2.
+             */
+
+            if (
+                players[2] === myId
+            ) {
+
+                myPlayer = 2;
+
+                return data;
+
+            }
+
 
             /*
-             * Find empty player slot.
+             * Player 1 is empty.
              */
 
             if (
                 !players[1]
             ) {
 
+                players[1] = myId;
+
                 myPlayer = 1;
 
             }
+
+
+            /*
+             * Player 1 occupied,
+             * so take Player 2.
+             */
 
             else if (
                 !players[2]
             ) {
 
+                players[2] = myId;
+
                 myPlayer = 2;
 
             }
 
-            else {
 
-                /*
-                 * Both slots occupied.
-                 *
-                 * This browser becomes spectator.
-                 */
+            /*
+             * Both players are occupied.
+             *
+             * This browser becomes spectator.
+             */
+
+            else {
 
                 myPlayer = 0;
 
             }
-
-
-
-            /*
-             * Store persistent browser ID.
-             */
-
-            if (
-                myPlayer
-            ) {
-
-                localStorage.setItem(
-
-                    playerKey,
-
-                    String(myPlayer)
-
-                );
-
-
-
-                players[myPlayer] =
-                    crypto.randomUUID();
-
-            }
-
 
 
             return {
@@ -305,7 +296,6 @@ function claimPlayer() {
     );
 
 }
-
 
 
 claimPlayer();
@@ -373,7 +363,6 @@ const coordinatesX =
 
 roomLabel.textContent =
     `Room: ${roomId}`;
-
 
 
 coordinatesX.innerHTML =
@@ -558,7 +547,9 @@ function render(state) {
                     );
 
 
-                if (test.ok) {
+                if (
+                    test.ok
+                ) {
 
                     cell.classList.add(
                         "valid"
@@ -578,7 +569,6 @@ function render(state) {
                 state.board[
                     indexOf(x, y)
                 ];
-
 
 
             if (piece) {
@@ -677,6 +667,16 @@ function render(state) {
     }
 
     else if (
+        !state.players[1] ||
+        !state.players[2]
+    ) {
+
+        statusLabel.textContent =
+            "Đang chờ người chơi 2";
+
+    }
+
+    else if (
         myPlayer === 0
     ) {
 
@@ -723,7 +723,6 @@ function render(state) {
             ? "Đã tham gia"
 
             : "Đang chờ...";
-
 
 
     renderCounts(state);
@@ -783,7 +782,6 @@ function renderCounts(state) {
             state.board,
             2
         );
-
 
 
     countsContent.innerHTML = `
@@ -904,6 +902,36 @@ function onCellClick(
 
     if (
         currentState.winner
+    ) {
+
+        return;
+
+    }
+
+
+
+    /*
+     * Wait until both players have joined.
+     */
+
+    if (
+        !currentState.players[1] ||
+        !currentState.players[2]
+    ) {
+
+        return;
+
+    }
+
+
+
+    /*
+     * Only allow movement
+     * on the current player's turn.
+     */
+
+    if (
+        currentState.turn !== myPlayer
     ) {
 
         return;
@@ -1051,7 +1079,6 @@ function onCellClick(
 
             }
         );
-
 
 
         selected = null;
