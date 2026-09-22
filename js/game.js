@@ -612,25 +612,19 @@ function handleBoardClick(event) {
     );
 }
 
-
-/*
- * MAKE MOVE
- */
-
-function makeMove(
-    from,
-    to
-) {
+function makeMove(from, to) {
 
     if (!gameHandle) {
         return;
     }
 
+    if (!currentState) {
+        return;
+    }
 
     /*
-     * Local validation first.
+     * Local validation.
      */
-
     const check =
         validateMove(
             currentState,
@@ -638,7 +632,6 @@ function makeMove(
             from,
             to
         );
-
 
     if (!check.ok) {
 
@@ -648,43 +641,65 @@ function makeMove(
         return;
     }
 
-
     /*
      * Clear selection.
      */
-
     selectedSquare = null;
 
-
     /*
-     * Update shared state atomically.
+     * Update shared state.
+     *
+     * IMPORTANT:
+     * PlayHTML expects the updater
+     * to mutate the draft.
      */
-
     gameHandle.setData(
-        state => {
+        draft => {
 
             const result =
                 applyMove(
-                    state,
+                    draft,
                     myPlayer,
                     from,
                     to
                 );
 
+            /*
+             * Something changed between
+             * local validation and this
+             * shared-state update.
+             */
             if (!result.result.ok) {
-                return state;
+                return;
             }
 
-            return result.state;
+            const nextState =
+                result.state;
+
+            /*
+             * Copy the new state into
+             * the PlayHTML draft.
+             */
+            draft.board =
+                nextState.board;
+
+            draft.turn =
+                nextState.turn;
+
+            draft.winner =
+                nextState.winner;
+
+            draft.winReason =
+                nextState.winReason;
+
+            draft.moveNumber =
+                nextState.moveNumber;
         }
     );
-
 
     statusLabel.textContent =
         "Đang cập nhật...";
 }
-
-
 /*
  * RENDER EVERYTHING
  */
